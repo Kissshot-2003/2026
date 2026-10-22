@@ -50,3 +50,44 @@ CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
 - 在 Windows 上编辑文件，行尾符是 CRLF；`git` 提交进 GitHub 时归一化成 LF，
   于是用 API 传 blob 时得先转 LF，否则 diff 会显示整个文件被重写。
 - PowerShell 5.1 按 ANSI 读 `.ps1` 文件，脚本里写中文路径会乱码；路径要当参数传进去。
+
+## 2026-10-22 · 三种编码各测一遍，外加一个 OFD 解析崩溃
+
+**补完上半场缺的那一格。** 上一次只测了「WT 绑着 ctrl+tab」和「开了 win32 模式」两种情况，
+中间缺的是**解绑之后会怎样**。这次把实验做全了——改 `settings.json` 的 `actions` 数组解绑 ctrl+tab，
+三种编码各跑一遍（改动前先做逐字节备份，跑完在 `finally` 里还原）：
+
+| 编码 | `ctrl+tab` | `ctrl+shift+tab` | `tab` |
+|---|---|---|---|
+| 默认（WT 绑着） | 什么都没有 | 什么都没有 | `0x09` |
+| 解绑 + legacy | `0x09` | `ESC [ Z` | `0x09` |
+| 解绑 + 请求 kitty | `0x09` | `ESC [ Z` | `0x09` |
+| 解绑 + win32 | `CSI 9 ; 15 ; 0 ; 1 ; 40 ; 1 _` | `CSI 9 ; 15 ; 0 ; 1 ; 56 ; 1 _` | `CSI 9 ; 1 ; 9 ; 1 ; 32 ; 1 _` |
+
+三个结论：
+
+1. **WT 完全忽略 kitty 协议**——请求 `CSI > 5 u` 的输出与 legacy 逐字节相同。
+   所以 opencode 现在那个 kitty 请求在 Windows 上是个 no-op，修饰键状态对**所有**快捷键都不只是 ctrl+tab 不可用。
+2. **解绑是必要但不充分**：legacy 编码下 `ctrl+tab` 就是 `0x09`（和纯 Tab 一样），
+   `ctrl+shift+tab` 变成 `ESC[Z`（纯 shift+tab，Ctrl 丢了）。Ctrl 怎么都回不来。
+3. **只有 win32 模式同时带来修饰键和 key-down**：`Cs = 0x28`（left ctrl）、`0x38`（left ctrl + shift），
+   而且 `Kd = 1`——key-down 真的送到了。
+
+**所以完整的修法是两半**：解绑终端的绑定 + 打开 win32-input-mode。后者要给 `@opentui/core` 加一个
+native control kind（跟 kitty flags 同款），属于跨 Zig/ABI 的改动，建议由 opentui 维护者主导。
+
+**顺手把文档 PR 的措辞改精确了。** 之前写「解绑 ctrl+tab 就能用」是错的——解绑只让按键**到达**应用，
+legacy 编码下它仍然和纯 Tab 无法区分。文档现在说的是实际交付的字节。
+
+**另一个 PR**：[renoyuan/easyofd#93](https://github.com/renoyuan/easyofd/pull/93) 修一个解析崩溃。
+issue #90 里 `ofd:Clips/ofd:Path` 的 `@Boundary` 是可选的，但代码无条件 `float()` 它，
+缺失时 `float("")` 抛 `ValueError`，**一个文本对象就能让整份 OFD 读不出来**。
+改完补了 `test/test_clips_boundary.py`，修复前跑它正好复现那个 `ValueError`，修复后两个用例都过
+（一个测缺失、一个测正常存在，防止改过头）。
+
+**又踩了一个坑**：上游有个分支就叫 `fix`，所以 `fix/xxx` 这样的分支名推不上去——
+git 报 `directory file conflict`（ref `fix` 是文件，`fix/xxx` 要的是目录）。换个不带斜杠前缀的名字就行。
+
+**还有个坑**：GitHub 的 `matching-refs` 在这个仓库上会返回两千多个 ref，直接打印能把输出刷爆。
+要查特定分支就用 `git/refs/heads/<name>` 单查。
+
