@@ -152,6 +152,52 @@ git 报 `directory file conflict`（ref `fix` 是文件，`fix/xxx` 要的是目
 **一个通用教训**：翻译任务里「结构对得上」不等于「内容对得上」。
 `tools.mdx` 标题数完全一致，却是一份没人更新过的旧翻译。
 
+## 2026-10-22 · 把校验脚本做成工具链，逐页把中文文档拉齐
+
+**接着量 `cli.mdx` 和 `config.mdx`。** 之前的校验脚本只能给出总数（缺几个标题、
+几个代码块、几行表格），定位不到具体位置。于是按「怎么对齐」重写了几支脚本：
+
+| 脚本 | 干什么 |
+|---|---|
+| `verify-translation.ts` | 总数核对 + 锚点必须能在本页解析 |
+| `diff-headings.ts` | 逐个标题并排，**围栏感知**（代码块里的 `# or` 不是标题） |
+| `diff-blocks.ts` | 按**文件顺序**比表格/代码块的位置 |
+| `diff-flags.ts` | 按**第一列的标志名**配对表格，列出缺的行 |
+| `diff-code.ts` | 按代码块**首行的多重集**比对 |
+| `diff-links.ts` | 内部链接集合差异 |
+| `count-code-per-section.ts` | 每个小节的代码块数量 |
+| `list-tables.ts` / `list-code.ts` | 列出全部表格/代码块 |
+
+三个自己踩的坑，都写进脚本注释了：
+
+- 表格行按 `|` 切开后，**第一列是 `r[1]` 不是 `r[0]`**（行首的 `|` 会多出一个空元素）。
+  这个 off-by-one 让「所有表都匹配」变成了空集假象。
+- **小节名是翻译过的**（「全局标志」≠ "Global Flags"），所以按小节名配对表全部落空，
+  必须改成按标志名或按文件顺序。
+- 贪心匹配会串位：中文表少一张时，后面的表会整体错位配对，报出一堆假的「缺失行」。
+
+**结果**：`cli.mdx` 补上 `plugin`/`pr`/`db`/`debug` 四个命令小节、`auth login` 与
+`export` 的标志表、`session delete` 子命令，以及 `--auto`/`--mdns`/`--mdns-domain`/`--cors`/`--pure`
+几个后加的标志。`config.mdx` 补上托管设置、Shell、策略、图片附件、子代理深度、快照、
+LSP 服务器七节。
+
+**还发现两处是「内容错了」而不是「少了」**：
+
+- `config.mdx` 的 TUI 一节中文版还在讲旧的 `tui` 选项放在 `opencode.json` 里，
+  英文版已经挪到独立的 `tui.json` 文件了。
+- `config.mdx` 的「主题」「快捷键」两处示例用的是 `opencode.json` + `config.json` schema，
+  可它们本来就是 TUI 设置——**中文用户照抄会被 schema 拒绝**。
+
+**又犯了一个错**：`git checkout -B <branch> origin/dev` 建分支时，
+**工作区里未提交的改动被冲掉了**（permissions/troubleshooting/keybinds 等六个文件的成果），
+而这些改动只存在于各自分支的提交里，只好重新 checkout 回来。
+正确的做法是先 `git stash`。另外 `git checkout <branch> -- <file>` 会**暂存**文件，
+所以跨分支切换时它们不会消失——这个特性救了场，但也导致有一次提交混进了 7 个文件。
+
+**GitHub 依然拒绝这个 fork 的 PR 创建。** 把 fork 的 `dev` 同步到上游最新也没用。
+分支、标题、正文、构建都备好了，只差「点提交」：`D:\通用项目\open-pending-prs.ps1`。
+
+
 **分支管理上栽了个跟头**：建第二个、第三个翻译分支时**没有回到 `dev`**，于是它们逐级包含
 前一个分支的提交——`zh-cn-references-policies` 实际含 3 个文件（重复了前一个 PR 的改动），
 `zh-cn-missing-sections` 含 5 个。这既违反 PR 模板里「不含无关改动」的承诺，
