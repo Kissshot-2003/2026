@@ -91,3 +91,48 @@ git 报 `directory file conflict`（ref `fix` 是文件，`fix/xxx` 要的是目
 **还有个坑**：GitHub 的 `matching-refs` 在这个仓库上会返回两千多个 ref，直接打印能把输出刷爆。
 要查特定分支就用 `git/refs/heads/<name>` 单查。
 
+## 2026-10-22 · 顺藤摸到中文文档的断层
+
+**起因**：给 #57623 补评论时，发现那个 issue 说的「workflow 闸门写错了」**不是唯一的问题**。
+
+`docs-update.yml` 和 `docs-locale-sync.yml` 同步的都是 `packages/web/src/content/docs/`，
+而 `packages/web/astro.config.mjs` 里 `base: "/docs"`——这是 **v1 文档站**。
+真正在长的 v2 文档在 `services/www/src/docs/content/`，`astro.config.ts` 里 `base: "/v2/"`。
+
+两棵树不是一回事，语言环境也不一样：
+
+| 树 | 部署路径 | 语言目录 |
+|---|---|---|
+| `packages/web/src/content/docs/` | `/docs` | 17 个（含 zh-cn、zh-tw） |
+| `services/www/src/docs/content/` | `/v2/` | **一个都没有** |
+
+所以就算把 `if: false` 修好，同步的仍然是 v1 的副本，v2 的页面还是没人翻。
+
+**顺便量了断层有多大**（逐页对比标题数）：
+
+| 页面 | 英文 | zh-cn |
+|---|---|---|
+| `providers.mdx` | 58 | 47 |
+| `config.mdx` | 39 | 32 |
+| `cli.mdx` | 29 | 25 |
+| `troubleshooting.mdx` | 23 | 22 |
+| `tools.mdx` | 19 | 18 |
+| `permissions.mdx` | 11 | 10 |
+| `keybinds.mdx` | 6 | 5 |
+| `policies.mdx` | 5 | **没翻** |
+| `references.mdx` | 6 | **没翻** |
+
+33 个英文页面里 9 个落后，2 个压根没翻译。`keybinds.mdx` 缺的是整整一节 `## Binding Values`——
+中文用户看文档根本不知道一个绑定值可以写多个快捷键。
+
+**关键点**：同步被冻住**不影响**直接提交翻译。所以先补了最容易的那个：
+[opencode#58017](https://github.com/anomalyco/opencode/pull/58017) 给 `zh-cn/keybinds.mdx`
+补上 `## 绑定值` 一节。译名按 `.opencode/glossary/zh-cn.md` 和本页既有约定
+（`keybind`/`shortcut` → 快捷键，`## Disable Keybind` 已译作 `## 禁用快捷键`，
+所以 `## Binding Values` → `## 绑定值`），代码块和配置键名与英文版一字不改。
+
+**验证的坑**：`services/www` 和 `packages/web` 是两棵独立的 Astro 树，
+改 v1 的文档**要在 `packages/web` 里 build**，不能用 `services/www` 的 build 顶替——
+两者都跑了一遍才算数。
+
+
