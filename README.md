@@ -152,5 +152,26 @@ git 报 `directory file conflict`（ref `fix` 是文件，`fix/xxx` 要的是目
 **一个通用教训**：翻译任务里「结构对得上」不等于「内容对得上」。
 `tools.mdx` 标题数完全一致，却是一份没人更新过的旧翻译。
 
+**分支管理上栽了个跟头**：建第二个、第三个翻译分支时**没有回到 `dev`**，于是它们逐级包含
+前一个分支的提交——`zh-cn-references-policies` 实际含 3 个文件（重复了前一个 PR 的改动），
+`zh-cn-missing-sections` 含 5 个。这既违反 PR 模板里「不含无关改动」的承诺，
+标题和正文也对不上号。force-push 之后 GitHub 还把两个 PR 自动关了（diff 变空），
+得重建。重建时改成**每个分支都从最新的 `origin/dev` 起**，只放自己那一个改动。
+
+**还踩了两个 PowerShell 的坑**，都是同一种病：
+
+- `git log --format=%B > msg.txt` 写出来的是 **UTF-16LE**，文件里每个字符后面都有 NUL，
+  git 直接报 `a NUL byte in commit log message not allowed`。
+  改用 `[System.IO.File]::WriteAllText($p, $text, (New-Object System.Text.UTF8Encoding($false)))`。
+- 提交信息里带反引号时，PowerShell 的 here-string 会把它当转义符，整段解析失败。
+  带反引号的提交信息一律先用文件写好，再 `git commit -F`。
+
+**最后一个坑不是我的**：GitHub 突然拒绝了这个 fork 到上游的**所有** PR 创建——
+连「已经有 PR 的分支」和「fork 自己的 dev 分支」都返回 404（而不是「PR 已存在」），
+而 issue 创建、评论、其他仓库的 PR 都正常。限流配额是 4975/5000，状态页全绿。
+看起来是 GitHub 对该 fork 的 PR 创建做了某种限流。改动已经推到 fork 上、构建也过了，
+只差「点提交」这一步。
+
+
 
 
